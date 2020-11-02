@@ -2294,6 +2294,7 @@ static inline int php_openssl_tcp_sockop_accept(php_stream *stream, php_openssl_
 	int clisock;
 	zend_bool nodelay = 0;
 	zval *tmpzval = NULL;
+	struct php_keepalive keepalive = {.enabled = 0};
 
 	xparam->outputs.client = NULL;
 
@@ -2303,6 +2304,27 @@ static inline int php_openssl_tcp_sockop_accept(php_stream *stream, php_openssl_
 		nodelay = 1;
 	}
 
+	if (PHP_STREAM_CONTEXT(stream)
+		&& (tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive")) != NULL
+		&& zend_is_true(tmpzval)) {
+		keepalive.enabled = 1;
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_idle")) != NULL
+			&& (keepalive.idle = zval_get_long(tmpzval)) < 0) {
+			keepalive.idle = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_interval")) != NULL
+			&& (keepalive.interval = zval_get_long(tmpzval)) < 0) {
+			keepalive.interval = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_count")) != NULL
+			&& (keepalive.count = zval_get_long(tmpzval)) < 0) {
+			keepalive.count = 0;
+		}
+	}
+
 	clisock = php_network_accept_incoming(sock->s.socket,
 		xparam->want_textaddr ? &xparam->outputs.textaddr : NULL,
 		xparam->want_addr ? &xparam->outputs.addr : NULL,
@@ -2310,7 +2332,7 @@ static inline int php_openssl_tcp_sockop_accept(php_stream *stream, php_openssl_
 		xparam->inputs.timeout,
 		xparam->want_errortext ? &xparam->outputs.error_text : NULL,
 		&xparam->outputs.error_code,
-		nodelay);
+		nodelay, &keepalive);
 
 	if (clisock >= 0) {
 		php_openssl_netstream_data_t *clisockdata = (php_openssl_netstream_data_t*) emalloc(sizeof(*clisockdata));

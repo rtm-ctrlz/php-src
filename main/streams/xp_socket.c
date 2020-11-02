@@ -705,6 +705,7 @@ static inline int php_tcp_sockop_connect(php_stream *stream, php_netstream_data_
 	int ret;
 	zval *tmpzval = NULL;
 	long sockopts = STREAM_SOCKOP_NONE;
+	struct php_keepalive keepalive = {.enabled = 0};
 
 #ifdef AF_UNIX
 	if (stream->ops == &php_stream_unix_socket_ops || stream->ops == &php_stream_unixdg_socket_ops) {
@@ -771,6 +772,35 @@ static inline int php_tcp_sockop_connect(php_stream *stream, php_netstream_data_
 	) {
 		sockopts |= STREAM_SOCKOP_TCP_NODELAY;
 	}
+	if (stream->ops != &php_stream_udp_socket_ops /* TCP_KEEPALIVE is only applicable for TCP */
+#ifdef AF_UNIX
+		&& stream->ops != &php_stream_unix_socket_ops
+		&& stream->ops != &php_stream_unixdg_socket_ops
+#endif
+		&& PHP_STREAM_CONTEXT(stream)
+		&& (tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive")) != NULL
+		&& zend_is_true(tmpzval)
+	) {
+		keepalive.enabled = 1;
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_idle")) != NULL
+			&& (keepalive.idle = zval_get_long(tmpzval)) < 0
+		) {
+			keepalive.idle = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_interval")) != NULL
+			&& (keepalive.interval = zval_get_long(tmpzval)) < 0
+		) {
+			keepalive.interval = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_count")) != NULL
+			&& (keepalive.count = zval_get_long(tmpzval)) < 0
+		) {
+			keepalive.count = 0;
+		}
+	}
 
 	/* Note: the test here for php_stream_udp_socket_ops is important, because we
 	 * want the default to be TCP sockets so that the openssl extension can
@@ -784,7 +814,8 @@ static inline int php_tcp_sockop_connect(php_stream *stream, php_netstream_data_
 			&err,
 			bindto,
 			bindport,
-			sockopts
+			sockopts,
+			&keepalive
 			);
 
 	ret = sock->socket == -1 ? -1 : 0;
@@ -815,6 +846,7 @@ static inline int php_tcp_sockop_accept(php_stream *stream, php_netstream_data_t
 	int clisock;
 	zend_bool nodelay = 0;
 	zval *tmpzval = NULL;
+	struct php_keepalive keepalive = {.enabled=0};
 
 	xparam->outputs.client = NULL;
 
@@ -822,6 +854,28 @@ static inline int php_tcp_sockop_accept(php_stream *stream, php_netstream_data_t
 		(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_nodelay")) != NULL &&
 		zend_is_true(tmpzval)) {
 		nodelay = 1;
+	}
+	if ((NULL != PHP_STREAM_CONTEXT(stream))
+		&& stream->ops != &php_stream_udp_socket_ops
+		&& (tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive")) != NULL
+		&& zend_is_true(tmpzval) ) {
+		keepalive.enabled = 1;
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_idle")) != NULL
+			&& (keepalive.idle = zval_get_long(tmpzval)) < 0) {
+			keepalive.idle = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_interval")) != NULL
+			&& (keepalive.interval = zval_get_long(tmpzval)) < 0) {
+			keepalive.interval = 0;
+		}
+		if (
+			(tmpzval = php_stream_context_get_option(PHP_STREAM_CONTEXT(stream), "socket", "tcp_keepalive_count")) != NULL
+			&& (keepalive.count = zval_get_long(tmpzval)) < 0
+			) {
+			keepalive.count = 0;
+		}
 	}
 
 	clisock = php_network_accept_incoming(sock->socket,
@@ -831,7 +885,7 @@ static inline int php_tcp_sockop_accept(php_stream *stream, php_netstream_data_t
 		xparam->inputs.timeout,
 		xparam->want_errortext ? &xparam->outputs.error_text : NULL,
 		&xparam->outputs.error_code,
-		nodelay);
+		nodelay, &keepalive);
 
 	if (clisock >= 0) {
 		php_netstream_data_t *clisockdata = (php_netstream_data_t*) emalloc(sizeof(*clisockdata));

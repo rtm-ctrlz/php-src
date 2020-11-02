@@ -119,6 +119,17 @@ typedef int php_socket_t;
 #define STREAM_SOCKOP_IPV6_V6ONLY_ENABLED (1 << 4)
 #define STREAM_SOCKOP_TCP_NODELAY         (1 << 5)
 
+#if !defined(PHP_KEEPIDLE) && defined(TCP_KEEPALIVE)
+#define TCP_KEEPIDLE TCP_KEEPALIVE
+#endif
+
+typedef struct php_keepalive
+{
+	int enabled;
+	int idle;
+	int interval;
+	int count;
+} php_keepalive;
 
 /* uncomment this to debug poll(2) emulation on systems that have poll(2) */
 /* #define PHP_USE_POLL_2_EMULATION 1 */
@@ -248,7 +259,7 @@ PHPAPI void php_network_freeaddresses(struct sockaddr **sal);
 
 PHPAPI php_socket_t php_network_connect_socket_to_host(const char *host, unsigned short port,
 		int socktype, int asynchronous, struct timeval *timeout, zend_string **error_string,
-		int *error_code, const char *bindto, unsigned short bindport, long sockopts
+		int *error_code, const char *bindto, unsigned short bindport, long sockopts, struct php_keepalive *keepalive
 		);
 
 PHPAPI int php_network_connect_socket(php_socket_t sockfd,
@@ -273,7 +284,8 @@ PHPAPI php_socket_t php_network_accept_incoming(php_socket_t srvsock,
 		struct timeval *timeout,
 		zend_string **error_string,
 		int *error_code,
-		int tcp_nodelay
+		int tcp_nodelay,
+		struct php_keepalive *keepalive
 		);
 
 PHPAPI int php_network_get_sock_name(php_socket_t sock,

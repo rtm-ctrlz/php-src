@@ -723,7 +723,8 @@ PHPAPI php_socket_t php_network_accept_incoming(php_socket_t srvsock,
 		struct timeval *timeout,
 		zend_string **error_string,
 		int *error_code,
-		int tcp_nodelay
+		int tcp_nodelay,
+		struct php_keepalive *keepalive
 		)
 {
 	php_socket_t clisock = -1;
@@ -752,6 +753,26 @@ PHPAPI php_socket_t php_network_accept_incoming(php_socket_t srvsock,
 				setsockopt(clisock, IPPROTO_TCP, TCP_NODELAY, (char*)&tcp_nodelay, sizeof(tcp_nodelay));
 #endif
 			}
+#ifdef SO_KEEPALIVE
+			if (keepalive->enabled) {
+				setsockopt(clisock, SOL_SOCKET, SO_KEEPALIVE, &keepalive->enabled, sizeof(keepalive->enabled));
+#ifdef TCP_KEEPIDLE
+				if (keepalive->idle>0) {
+					setsockopt(clisock, IPPROTO_TCP, TCP_KEEPIDLE, &keepalive->idle, sizeof(keepalive->idle));
+				}
+#endif
+#ifdef TCP_KEEPINTVL
+				if (keepalive->interval>0) {
+					setsockopt(clisock, IPPROTO_TCP, TCP_KEEPINTVL, &keepalive->interval, sizeof(keepalive->interval));
+				}
+#endif
+#ifdef TCP_KEEPCNT
+				if (keepalive->count>0) {
+					setsockopt(clisock, IPPROTO_TCP, TCP_KEEPCNT, &keepalive->count, sizeof(keepalive->count));
+				}
+#endif
+			}
+#endif
 		} else {
 			error = php_socket_errno();
 		}
@@ -778,7 +799,7 @@ PHPAPI php_socket_t php_network_accept_incoming(php_socket_t srvsock,
 /* {{{ php_network_connect_socket_to_host */
 php_socket_t php_network_connect_socket_to_host(const char *host, unsigned short port,
 		int socktype, int asynchronous, struct timeval *timeout, zend_string **error_string,
-		int *error_code, const char *bindto, unsigned short bindport, long sockopts
+		int *error_code, const char *bindto, unsigned short bindport, long sockopts, struct php_keepalive *keepalive
 		)
 {
 	int num_addrs, n, fatal = 0;
@@ -912,6 +933,28 @@ skip_bind:
 				int val = 1;
 				if (sockopts & STREAM_SOCKOP_TCP_NODELAY) {
 					setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (char*)&val, sizeof(val));
+				}
+			}
+#endif
+#ifdef SO_KEEPALIVE
+			{
+				if (keepalive->enabled) {
+					setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepalive->enabled, sizeof(keepalive->enabled));
+#ifdef TCP_KEEPIDLE
+					if (keepalive->idle > 0) {
+						setsockopt(sock, IPPROTO_TCP, TCP_KEEPIDLE, &keepalive->idle, sizeof(keepalive->idle));
+					}
+#endif
+#ifdef TCP_KEEPINTVL
+					if (keepalive->interval > 0) {
+						setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepalive->interval, sizeof(keepalive->interval));
+					}
+#endif
+#ifdef TCP_KEEPCNT
+					if (keepalive->count > 0) {
+						setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepalive->count, sizeof(keepalive->count));
+					}
+#endif
 				}
 			}
 #endif
